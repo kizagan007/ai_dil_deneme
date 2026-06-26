@@ -1,0 +1,203 @@
+import base64
+import os
+import time
+import streamlit as st
+from ollama import Client  # Buradan Client'ı doğrudan çekiyoruz
+from google import genai
+from google.genai import types
+
+# --- 1. MOTOR KURULUMU ---
+# Ollama motoruna 'ollama_client' ismiyle bağlanıyoruz
+ollama_client = Client(host='http://localhost:11434')
+API_KEY = ""
+
+# --- 2. SAYFA YAPILANDIRMASI ---
+st.set_page_config(page_title="Evrensel Dil İrlümAI", page_icon="🌍", layout="centered")
+SECILEN_RESIM = "arkaplan.png"
+# --- 1. SAYFA YAPILANDIRMASI (Geniş Mod ve İkon) ---
+st.set_page_config(page_title="Evrensel Dil İrlümAI", page_icon="🌍", layout="centered")
+bg_resim_css = ""
+if os.path.exists(SECILEN_RESIM):
+    with open(SECILEN_RESIM, "rb") as image_file:
+        encoded_string = base64.b64encode(image_file.read()).decode()
+    
+    bg_resim_css = f"""
+    #root, [data-testid="stAppViewContainer"], .stApp {{
+        background: linear-gradient(rgba(20, 140, 140, 0.85), rgba(15, 115, 115, 0.88)), url(data:image/png;base64,{encoded_string}) !important;
+        background-size: cover !important;
+        background-attachment: fixed !important;
+    }}
+    """
+else:
+    bg_resim_css = """
+    #root, [data-testid="stAppViewContainer"], .stApp {
+        background-color: #148c8c !important; 
+    }
+    """
+
+# --- NÜKLEER CSS (Alttaki Siyah Şeridi Kazıma Operasyonu) ---
+st.markdown(f"""
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,600;1,600&display=swap');
+
+    {bg_resim_css}
+
+    /* 1. Üst Bar Şeffaf */
+    header[data-testid="stHeader"] {{
+        background: transparent !important;
+    }}
+
+    /* 2. ALTTAKI SİYAH BARI YOK EDEN 'AĞIR SİLAH' KOMBO SEÇİCİ */
+    [data-testid="stBottom"], 
+    [data-testid="stBottom"] > *,
+    [data-testid="stBottomBlockContainer"],
+    div[data-testid^="stBottom"],
+    .stAppBottom,
+    .stAppBottom > *,
+    section[data-testid="stAppViewContainer"] > div:last-child,
+    div:has(> [data-testid="stChatInput"]),
+    div:has(> div > [data-testid="stChatInput"]),
+    footer {{
+        background: transparent !important;
+        background-color: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+    }}
+
+    /* 3. Mesaj Yazma Kapsülünün Kendisi (Havada süzülen Koyu Turkuaz Cam) */
+    [data-testid="stChatInputContainer"] {{
+        background-color: rgba(10, 75, 75, 0.75) !important; /* Arka planla dikişsiz uysun diye Koyu Turkuaz */
+        backdrop-filter: blur(16px) !important;
+        -webkit-backdrop-filter: blur(16px) !important;
+        border: 1px solid rgba(255, 255, 255, 0.4) !important;
+        border-radius: 25px !important;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3) !important;
+    }}
+
+    /* İçine yazılan yazılar Saf Beyaz */
+    [data-testid="stChatInputContainer"] textarea {{
+        color: #ffffff !important;
+    }}
+    [data-testid="stChatInputContainer"] textarea::placeholder {{
+        color: rgba(255, 255, 255, 0.6) !important;
+    }}
+
+    /* Yazılar ve Balonlar */
+    h1, h2, h3 {{
+        font-family: 'Playfair Display', serif !important;
+        font-style: italic !important;
+        color: #ffffff !important;
+        text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+    }}
+
+    [data-testid="stChatMessageContent"] {{
+        background-color: rgba(135, 206, 235, 0.90) !important;
+        color: #002b2b !important;
+        border-radius: 15px;
+        padding: 10px 15px;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+    }}
+
+    .stChatMessage {{padding: 0.5rem 1rem !important;}}
+    .stButton {{margin-top: 20px;}}
+</style>
+""", unsafe_allow_html=True)
+
+# --- 2. GİZLİ CSS MAKYAJI (Boşlukları Daraltma) ---
+st.markdown("""
+<style>
+    /* Mesaj kutularının altındaki gereksiz dev boşluğu törpülüyoruz */
+    .stChatMessage {padding: 0.5rem 1rem !important;}
+    /* Butonun üstündeki boşluğu açalım */
+    .stButton {margin-top: 20px;}
+</style>
+""", unsafe_allow_html=True)
+
+# --- 3. SOL KONTROL PANELİ (SIDEBAR) ---
+with st.sidebar:
+    st.header("🌍 Evrensel Dil İrlümAI")
+    st.caption("Yapay Zeka Destekli Dil Asistanı")
+    st.divider() # Araya şık bir çizgi
+    
+    st.info("💡 **Nasıl Çalışır?**\nAşağıdaki kutuya hangi dilde 'Merhaba' yazarsanız, sistem anında o dilin hocasına dönüşür.")
+    
+    st.divider()
+    
+    # SOHBETİ SIFIRLAMA BUTONU (İstediğin buton!)
+    if st.button("🔄 Yeni Derse Başla", type="primary", use_container_width=True):
+        st.session_state.messages = [] # Ekrandaki yazıları sil
+        if "chat_session" in st.session_state:
+            del st.session_state.chat_session # Arka plandaki sohbet hafızasını öldür
+        st.rerun() # Sayfayı taptaze yenile!
+
+
+# --- 3. ÖĞRETMEN YASALARI ---
+ogretmen_talimati = """
+Sen dünyadaki tüm dilleri ana dili gibi konuşabilen efsanevi bir dil öğretmenisin. 
+SANA KOYDUĞUM ÇOK KATI KURAL (Okunuş ve Alfabe Kuralı):
+Öğrenciye yabancı dilde kelime yazdığında, cevabını İSTİSNASIZ şu 3'lü şablona göre vereceksin:
+ÇOK ÖNEMLİ FONETİK KURALI:
+[Türkçe Okunuşu] kısmını yazarken kelimeleri tek tek değil, o dilin doğal konuşma akışına göre yaz. Özellikle Fransızca gibi dillerde ulama (Liaison) varsa harfleri birbirine bağla. 
+Örn: "Comment allez-vous?" cümlesini [Koman ale vu] olarak değil, fonetik olarak tam duyulduğu gibi [Komantalevu] şeklinde yaz.
+
+• Orijinal Yazılışı
+• [Türkçe Okunuşu]
+• (Türkçe Anlamı)
+
+Kuralların:
+1. Asla İngilizce açıklama ekleme.
+2. Asla "Şunu da açıklarım" gibi ekstra cümleler kurma.
+3. Sadece ve sadece istediğim formatta yaz. Formatın dışına çıkan her karakter için cezalandırılırsın.
+4. İlk mesajda hangi dilde yazarsa o dilin öğretmeni ol.
+5. Dili kilitledikten sonra kural değişmez: Hataları nazikçe açıkla, doğruysa tebrik et.
+6. Sohbetin devamı için cevabın sonunda o dilde basit, A1-A2 seviyesinde tek bir soru sor.
+7. Cevapların bir öğretmen gibi kısa, net ve cesaretlendirici olsun.
+"""
+
+# --- 4. OTURUM AYARLARI ---
+if "client" not in st.session_state: st.session_state.client = genai.Client(api_key=API_KEY)
+if "google_ceza_bitis" not in st.session_state: st.session_state.google_ceza_bitis = 0
+if "messages" not in st.session_state: st.session_state.messages = []
+if "ollama_history" not in st.session_state: 
+    st.session_state.ollama_history = [{"role": "system", "content": ogretmen_talimati}]
+
+st.title("🌍 AI DİL")
+for msg in st.session_state.messages:
+    with st.chat_message(msg["role"]):
+        st.markdown(msg["content"])
+
+# --- 5. HİBRİT MOTOR DÖNGÜSÜ ---
+if kullanici_girdisi := st.chat_input("Bir dilde bir şeyler yaz..."):
+    st.session_state.messages.append({"role": "user", "content": kullanici_girdisi})
+    st.session_state.ollama_history.append({"role": "user", "content": kullanici_girdisi})
+    
+   
+    with st.chat_message("assistant", avatar="🧑‍🏫"):
+        with st.spinner("Hoca düşünüyor..."):
+            cevap_metni = ""
+            su_an = time.time()
+            
+            # Google mı Ollama mı?
+            if su_an < st.session_state.google_ceza_bitis:
+                st.caption("⚡ *Yerel RTX 5060 motoru devrede...*")
+                response = ollama_client.chat(model='qwen2.5:7b', messages=st.session_state.ollama_history)
+                cevap_metni = response['message']['content']
+            else:
+                try:
+                    if "chat_session" not in st.session_state:
+                         config = types.GenerateContentConfig(system_instruction=ogretmen_talimati, temperature=0.7)
+                         st.session_state.chat_session = st.session_state.client.chats.create(model="gemini-2.5-flash", config=config)
+                    
+                    cevap = st.session_state.chat_session.send_message(kullanici_girdisi)
+                    cevap_metni = cevap.text
+                except Exception as hata:
+                    st.caption("⚡ *Google yoruldu! 45 saniye yerel motora geçiş...*")
+                    st.session_state.google_ceza_bitis = su_an + 45
+                    response = ollama_client.chat(model='qwen2.5:7b', messages=st.session_state.ollama_history)
+                    cevap_metni = response['message']['content']
+
+            # BURASI ÖNEMLİ: Eğer cevap geldiyse ekrana bas
+            if cevap_metni:
+                st.markdown(cevap_metni)
+                st.session_state.messages.append({"role": "assistant", "content": cevap_metni})
+                st.session_state.ollama_history.append({"role": "assistant", "content": cevap_metni})

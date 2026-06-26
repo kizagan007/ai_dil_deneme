@@ -1,16 +1,9 @@
 import base64
 import os
-import time
 import streamlit as st
-from ollama import Client  # Buradan Client'ı doğrudan çekiyoruz
 from google import genai
 from google.genai import types
-
-# --- 1. MOTOR KURULUMU ---
-# Ollama motoruna 'ollama_client' ismiyle bağlanıyoruz
-ollama_client = Client(host='http://localhost:11434')
-API_KEY = ""
-
+SECILEN_RESIM = "arkaplan.png"
 # --- 2. SAYFA YAPILANDIRMASI ---
 st.set_page_config(page_title="Evrensel Dil İrlümAI", page_icon="🌍", layout="centered")
 SECILEN_RESIM = "arkaplan.png"
@@ -131,8 +124,23 @@ with st.sidebar:
         st.rerun() # Sayfayı taptaze yenile!
 
 
-# --- 3. ÖĞRETMEN YASALARI ---
-ogretmen_talimati = """
+# --- 4. ANA EKRAN BAŞLIĞI ---
+st.title("🌍 AI Dil")
+st.caption("Sen hangi dili konuşursan, ben o dilin ustasıyım.")
+
+# --- 5. YAPAY ZEKA AYARLARI ---
+# --- 5. YAPAY ZEKA AYARLARI ---
+API_KEY = ""
+
+# 1. ŞALTER: Sadece ilk açılışta çalışır, Google motorunu kasaya koyar
+if "client" not in st.session_state:
+    st.session_state.client = genai.Client(api_key=API_KEY)
+
+# 2. ŞALTER: Hem ilk açılışta HEM DE 'Yeni Derse Başla' dendiğinde çalışır!
+if "chat_session" not in st.session_state:
+    
+    # --- 3. ÖĞRETMEN YASALARI ---
+    ogretmen_talimati = """
 Sen dünyadaki tüm dilleri ana dili gibi konuşabilen efsanevi bir dil öğretmenisin. 
 SANA KOYDUĞUM ÇOK KATI KURAL (Okunuş ve Alfabe Kuralı):
 Öğrenciye yabancı dilde kelime yazdığında, cevabını İSTİSNASIZ şu 3'lü şablona göre vereceksin:
@@ -154,50 +162,38 @@ Kuralların:
 7. Cevapların bir öğretmen gibi kısa, net ve cesaretlendirici olsun.
 """
 
-# --- 4. OTURUM AYARLARI ---
-if "client" not in st.session_state: st.session_state.client = genai.Client(api_key=API_KEY)
-if "google_ceza_bitis" not in st.session_state: st.session_state.google_ceza_bitis = 0
-if "messages" not in st.session_state: st.session_state.messages = []
-if "ollama_history" not in st.session_state: 
-    st.session_state.ollama_history = [{"role": "system", "content": ogretmen_talimati}]
+    
+    yapilandirma = types.GenerateContentConfig(
+        system_instruction=ogretmen_talimati,
+        temperature=0.7,
+    )
+    
+    st.session_state.chat_session = st.session_state.client.chats.create(model="gemini-2.5-flash", config=yapilandirma)
+    st.session_state.messages = []
 
-st.title("🌍 AI DİL")
+# --- 6. GEÇMİŞ MESAJLARI EKRANA ÇİZME ---
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
 
-# --- 5. HİBRİT MOTOR DÖNGÜSÜ ---
-if kullanici_girdisi := st.chat_input("Bir dilde bir şeyler yaz..."):
+# --- 7. KULLANICI GİRDİSİ VE CEVAP DÖNGÜSÜ ---
+kullanici_girdisi = None
+
+if "secilen_vitrin_senaryosu" in st.session_state:
+    kullanici_girdisi = st.session_state.secilen_vitrin_senaryosu
+    del st.session_state.secilen_vitrin_senaryosu # Tekrar tetiklenmesin diye hafızadan sil
+else:
+    kullanici_girdisi = st.chat_input("Bir dilde bir şeyler yaz...")
+
+if kullanici_girdisi:
+    with st.chat_message("user", avatar="👤"):
+        st.markdown(kullanici_girdisi)
     st.session_state.messages.append({"role": "user", "content": kullanici_girdisi})
-    st.session_state.ollama_history.append({"role": "user", "content": kullanici_girdisi})
     
-   
     with st.chat_message("assistant", avatar="🧑‍🏫"):
         with st.spinner("Hoca düşünüyor..."):
-            cevap_metni = ""
-            su_an = time.time()
+            cevap = st.session_state.chat_session.send_message(kullanici_girdisi)
+            st.markdown(cevap.text)
             
-            # Google mı Ollama mı?
-            if su_an < st.session_state.google_ceza_bitis:
-                st.caption("⚡ *Yerel RTX 5060 motoru devrede...*")
-                response = ollama_client.chat(model='qwen2.5:7b', messages=st.session_state.ollama_history)
-                cevap_metni = response['message']['content']
-            else:
-                try:
-                    if "chat_session" not in st.session_state:
-                         config = types.GenerateContentConfig(system_instruction=ogretmen_talimati, temperature=0.7)
-                         st.session_state.chat_session = st.session_state.client.chats.create(model="gemini-2.5-flash", config=config)
-                    
-                    cevap = st.session_state.chat_session.send_message(kullanici_girdisi)
-                    cevap_metni = cevap.text
-                except Exception as hata:
-                    st.caption("⚡ *Google yoruldu! 45 saniye yerel motora geçiş...*")
-                    st.session_state.google_ceza_bitis = su_an + 45
-                    response = ollama_client.chat(model='qwen2.5:7b', messages=st.session_state.ollama_history)
-                    cevap_metni = response['message']['content']
-
-            # BURASI ÖNEMLİ: Eğer cevap geldiyse ekrana bas
-            if cevap_metni:
-                st.markdown(cevap_metni)
-                st.session_state.messages.append({"role": "assistant", "content": cevap_metni})
-                st.session_state.ollama_history.append({"role": "assistant", "content": cevap_metni})
+    st.session_state.messages.append({"role": "assistant", "content": cevap.text})
+    st.rerun() # Vitrindeki butonları "anında" yok etmek için sayfayı tazele!

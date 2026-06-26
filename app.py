@@ -1,9 +1,13 @@
+import re
+from io import BytesIO
+from gtts import gTTS
 import base64
 import os
 import streamlit as st
 from google import genai
 from google.genai import types
 SECILEN_RESIM = "arkaplan.png"
+API_KEY = ""
 # --- 2. SAYFA YAPILANDIRMASI ---
 st.set_page_config(page_title="Evrensel Dil İrlümAI", page_icon="🌍", layout="centered")
 SECILEN_RESIM = "arkaplan.png"
@@ -130,7 +134,6 @@ st.caption("Sen hangi dili konuşursan, ben o dilin ustasıyım.")
 
 # --- 5. YAPAY ZEKA AYARLARI ---
 # --- 5. YAPAY ZEKA AYARLARI ---
-API_KEY = ""
 
 # 1. ŞALTER: Sadece ilk açılışta çalışır, Google motorunu kasaya koyar
 if "client" not in st.session_state:
@@ -141,6 +144,7 @@ if "chat_session" not in st.session_state:
     
     # --- 3. ÖĞRETMEN YASALARI ---
     ogretmen_talimati = """
+    
 Sen dünyadaki tüm dilleri ana dili gibi konuşabilen efsanevi bir dil öğretmenisin. 
 SANA KOYDUĞUM ÇOK KATI KURAL (Okunuş ve Alfabe Kuralı):
 Öğrenciye yabancı dilde kelime yazdığında, cevabını İSTİSNASIZ şu 3'lü şablona göre vereceksin:
@@ -152,6 +156,18 @@ SANA KOYDUĞUM ÇOK KATI KURAL (Okunuş ve Alfabe Kuralı):
 • [Türkçe Okunuşu]
 • (Türkçe Anlamı)
 
+
+SANA KOYDUĞUM ÇOK KRİTİK GİZLİ KOD KURALI:
+Her cevabının EN ÜST SATIRINA, bilgisayarın okuması için şu etiketi kesinlikle ekleyeceksin:
+[TTS:dilin_2_harfli_kodu:sadece_yabanci_dildeki_cümleler]
+
+Örnekler:
+Fransızca için -> [TTS:fr:Bonjour comment allez-vous ?]
+Rusça için -> [TTS:ru:Привет, как дела?]
+
+Bu etiketin içine ASLA Türkçe kelime, okunuş veya anlam koyma. Sadece saf yabancı dil olsun.
+
+
 Kuralların:
 1. Asla İngilizce açıklama ekleme.
 2. Asla "Şunu da açıklarım" gibi ekstra cümleler kurma.
@@ -159,7 +175,8 @@ Kuralların:
 4. İlk mesajda hangi dilde yazarsa o dilin öğretmeni ol.
 5. Dili kilitledikten sonra kural değişmez: Hataları nazikçe açıkla, doğruysa tebrik et.
 6. Sohbetin devamı için cevabın sonunda o dilde basit, A1-A2 seviyesinde tek bir soru sor.
-7. Cevapların bir öğretmen gibi kısa, net ve cesaretlendirici olsun.
+7.Sohbetin sonunda sorduğun sorunun anlamını da kesinlikle ekle.
+8. Cevapların bir öğretmen gibi kısa, net ve cesaretlendirici olsun.
 """
 
     
@@ -175,6 +192,8 @@ Kuralların:
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
+        if "audio" in msg and msg["audio"]:
+            st.audio(msg["audio"], format="audio/mp3")
 
 # --- 7. KULLANICI GİRDİSİ VE CEVAP DÖNGÜSÜ ---
 kullanici_girdisi = None
@@ -191,9 +210,42 @@ if kullanici_girdisi:
     st.session_state.messages.append({"role": "user", "content": kullanici_girdisi})
     
     with st.chat_message("assistant", avatar="🧑‍🏫"):
-        with st.spinner("Hoca düşünüyor..."):
+        with st.spinner("Hoca düşünüyor ve sesini akort ediyor..."):
             cevap = st.session_state.chat_session.send_message(kullanici_girdisi)
-            st.markdown(cevap.text)
+            ham_metin = cevap.text
             
-    st.session_state.messages.append({"role": "assistant", "content": cevap.text})
+            # --- 3. ASİSTAN HÜCRESİ: SES AYIKLAMA VE ÜRETME MOTORU ---
+            ses_verisi = None
+            gosterilecek_metin = ham_metin
+            
+            # Regex ile gizli [TTS:dil:metin] etiketini yakalıyoruz
+            match = re.search(r"\[TTS:\s*([a-zA-Z]{2,3})\s*:(.*?)\]", ham_metin)
+            if match:
+                dil_kodu = match.group(1).lower().strip()
+                okunacak_saf_metin = match.group(2).strip()
+                
+                # Çirkin gizli etiketi ekrandaki metinden siliyoruz
+                gosterilecek_metin = re.sub(r"\[TTS:.*?\]\n*", "", ham_metin).strip()
+                
+                # Google TTS motorunu hafızada ateşle
+                try:
+                    tts = gTTS(text=okunacak_saf_metin, lang=dil_kodu, slow=False)
+                    fp = BytesIO()
+                    tts.write_to_fp(fp)
+                    fp.seek(0)
+                    ses_verisi = fp.getvalue()
+                except Exception as e:
+                    st.caption(f"⚠️ Ses motoru başlatılamadı: {e}")
+
+            # --- EKRANA BASMA VE SESİ OYNATMA ---
+            st.markdown(gosterilecek_metin)
+            if ses_verisi:
+                st.audio(ses_verisi, format="audio/mp3")
+            
+    # Hafızaya eklerken artık 'cevap.text' değil, temizlenmiş metni ve sesi ekliyoruz
+    st.session_state.messages.append({
+        "role": "assistant", 
+        "content": gosterilecek_metin,
+        "audio": ses_verisi
+    })
     st.rerun() # Vitrindeki butonları "anında" yok etmek için sayfayı tazele!

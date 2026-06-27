@@ -185,7 +185,7 @@ Kuralların:
         temperature=0.7,
     )
     
-    st.session_state.chat_session = st.session_state.client.chats.create(model="gemini-1.5-pro-latest", config=yapilandirma)
+    st.session_state.chat_session = st.session_state.client.chats.create(model="gemini-flash", config=yapilandirma)
     st.session_state.messages = []
 
 # --- 6. GEÇMİŞ MESAJLARI EKRANA ÇİZME ---
